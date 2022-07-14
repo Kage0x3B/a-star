@@ -1,4 +1,5 @@
 use std::collections::{BinaryHeap, HashMap};
+use crate::{Args, PathfindingOptions};
 
 use crate::grid_graph::{ALL_DIRECTIONS, GraphVertex, GridGraph, VisitedGraphVertex};
 
@@ -9,7 +10,7 @@ pub struct PathResult {
 }
 
 // cost_func(start_vertex, goal_vertex, last_visited_vertex, current_vertex_cost)
-pub fn execute_a_star(graph: &GridGraph, start_vertex: GraphVertex, goal_vertex: GraphVertex, cost_func: &dyn Fn(&GraphVertex, &GraphVertex, &VisitedGraphVertex, &GraphVertex, u8) -> f32) -> Option<PathResult> {
+pub fn execute_a_star(graph: &GridGraph, start_vertex: GraphVertex, goal_vertex: GraphVertex, cost_func: &dyn Fn(&GraphVertex, &GraphVertex, &VisitedGraphVertex, &GraphVertex, u8, &PathfindingOptions) -> f32, options: &PathfindingOptions) -> Option<PathResult> {
     let mut open_list: BinaryHeap<VisitedGraphVertex> = BinaryHeap::new();
     let mut closed_list: HashMap<GraphVertex, f32> = HashMap::new();
     let mut parent_map: HashMap<GraphVertex, VisitedGraphVertex> = HashMap::new();
@@ -40,7 +41,7 @@ pub fn execute_a_star(graph: &GridGraph, start_vertex: GraphVertex, goal_vertex:
                     visit_neighbour_amount += 1;
                     curr_visited_neighbours += 1;
                     let vertex_cost = graph.get_cost(&neighbour_vertex);
-                    let calculated_cost: f32 = cost_func(&start_vertex, &goal_vertex, &current_vertex, &neighbour_vertex, vertex_cost);
+                    let calculated_cost: f32 = cost_func(&start_vertex, &goal_vertex, &current_vertex, &neighbour_vertex, vertex_cost, options);
 
                     let visited_neighbour_vertex = neighbour_vertex.into_visited(calculated_cost);
                     //println!("{}, {} to {}, {} cost: {} + {} => {}", current_vertex.x, current_vertex.y, neighbour_vertex.x, neighbour_vertex.y, current_vertex.cost, vertex_cost, calculated_cost);
@@ -52,7 +53,6 @@ pub fn execute_a_star(graph: &GridGraph, start_vertex: GraphVertex, goal_vertex:
                     new_entry.insert(current_vertex.cost);
 
                     println!("{}, {} visited {}, {}", current_vertex.x, current_vertex.y, neighbour_vertex.x, neighbour_vertex.y);
-
                 }
             }
         }

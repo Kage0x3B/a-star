@@ -1,3 +1,30 @@
+use clap::{Arg, arg_enum, Parser, PossibleValue, ValueEnum};
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about)]
+/// Rust implementation of the A*-algorithm
+pub struct Args {
+    /// Path to the input image, containing a grid graph with traversal costs and start/end vertices
+    #[clap(parse(from_os_str))]
+    pub input_path: std::path::PathBuf,
+
+    /// Changes the weight of the path cost
+    #[clap(short, long, value_parser, default_value_t = 1.)]
+    pub cost_weight: f32,
+
+    /// Changes the weight of the heuristics function
+    #[clap(short, long, value_parser, default_value_t = 1.)]
+    pub heuristics_weight: f32,
+
+    #[clap(value_enum, short = 'f', long)]
+    pub cost_function_enum: CostFunction,
+}
+
+pub struct PathfindingOptions {
+    pub cost_weight: f32,
+    pub heuristics_weight: f32,
+}
+
 use image::{GenericImageView, Rgba};
 
 use crate::grid_graph::{GraphVertex, GridGraph, VisitedGraphVertex};
@@ -14,26 +41,45 @@ const GOAL_VERTEX_COLOR: Rgba<u8> = Rgba([255, 0, 0, 255]);
 const PATH_VERTEX_COLOR: Rgba<u8> = Rgba([255, 128, 0, 255]);
 const VISITED_VERTEX_COLOR: Rgba<u8> = Rgba([64, 64, 64, 255]);
 
-fn zero_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8) -> f32 {
-    last_visited_vertex.cost + current_vertex_cost as f32
+
+fn zero_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8, options: &PathfindingOptions) -> f32 {
+    (last_visited_vertex.cost + current_vertex_cost as f32) * options.cost_weight
 }
 
-fn euclidean_distance_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8) -> f32 {
+fn euclidean_distance_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8, options: &PathfindingOptions) -> f32 {
     let g = last_visited_vertex.cost + current_vertex_cost as f32;
     let h = ((goal_vertex.x as f32 - current_vertex.x as f32).abs().powf(2.) + (goal_vertex.y as f32 - current_vertex.y as f32).abs().powf(2.)).sqrt();
 
-    g + h
+    g * options.cost_weight + h * options.heuristics_weight
 }
 
-fn manhattan_distance_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8) -> f32 {
+fn manhattan_distance_cost_function(start_vertex: &GraphVertex, goal_vertex: &GraphVertex, last_visited_vertex: &VisitedGraphVertex, current_vertex: &GraphVertex, current_vertex_cost: u8, options: &PathfindingOptions) -> f32 {
     let g = last_visited_vertex.cost + current_vertex_cost as f32;
     let h = (current_vertex.x as f32 - goal_vertex.x as f32).abs() + (current_vertex.y as f32 - goal_vertex.y as f32).abs();
 
-    g + h
+    g * options.cost_weight + h * options.heuristics_weight
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum CostFunction {
+    ZeroCost,
+    EuclideanDistance,
+    ManhattanDistance,
+}
+
+impl CostFunction {
+    fn get_cost_function(&self) -> &dyn Fn(&GraphVertex, &GraphVertex, &VisitedGraphVertex, &GraphVertex, u8, &PathfindingOptions) -> f32 {
+        match self {
+            CostFunction::ZeroCost => &zero_cost_function,
+            CostFunction::EuclideanDistance => &euclidean_distance_cost_function,
+            CostFunction::ManhattanDistance => &manhattan_distance_cost_function
+        }
+    }
 }
 
 fn main() {
-    let input_image = image::open("path_big3.png").expect("File not found!");
+    let args: Args = Args::parse();
+    let input_image = image::open(args.input_path).expect("File not found!");
 
     let (grid_width, grid_height) = input_image.dimensions();
     let mut tiles_grid_raw = vec![0_u8; (grid_width * grid_height) as _];
@@ -57,14 +103,18 @@ fn main() {
         }
     }
 
+    let cost_function = args.cost_function_enum.get_cost_function();
+
     let start_vertex = start_vertex.expect("No start vertex with color rgba(0, 255, 0, 255) found!");
     let goal_vertex = goal_vertex.expect("No goal vertex with color rgba(255, 0, 0, 255) found!");
 
     let tiles_grid_base: Vec<_> = tiles_grid_raw.as_slice().chunks(grid_width as _).collect();
-
     let grid_map = GridGraph::new(grid_width, grid_height, tiles_grid_base.as_slice());
 
-    let path_result = execute_a_star(&grid_map, start_vertex, goal_vertex, &manhattan_distance_cost_function).expect("Couldn't find valid path");
+    let path_result = execute_a_star(&grid_map, start_vertex, goal_vertex, cost_function, &PathfindingOptions {
+        cost_weight: args.cost_weight,
+        heuristics_weight: args.heuristics_weight,
+    }).expect("Couldn't find valid path");
 
     println!("Found path: {:?}, visited {} vertices", path_result.path, path_result.visited_vertices.len());
 
